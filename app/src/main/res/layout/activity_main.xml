@@ -1,94 +1,211 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true"
+    android:background="#F8FAFC"
+    tools:context=".MainActivity">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Network Information"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="24dp"/>
-
-    <TextView
-        android:id="@+id/tvIp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="当前公网 IP：未获取"
-        android:textSize="16sp"
-        android:layout_marginBottom="12dp"/>
-
-    <TextView
-        android:id="@+id/tvLocation"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="中文归属地：未获取"
-        android:textSize="16sp"
-        android:layout_marginBottom="12dp"/>
-
-    <TextView
-        android:id="@+id/tvIsp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="网络运营商：未获取"
-        android:textSize="16sp"
-        android:layout_marginBottom="12dp"/>
-
-    <TextView
-        android:id="@+id/tvApiSource"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="数据接口来源：未获取"
-        android:textSize="14sp"
-        android:textColor="#757575"
-        android:layout_marginBottom="24dp"/>
-
-    <!-- 状态栏图标样式选择器 -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="状态栏显示模式："
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp"/>
-
-    <RadioGroup
-        android:id="@+id/rgIconMode"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="24dp">
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="24dp">
 
-        <RadioButton
-            android:id="@+id/rbText"
-            android:layout_width="0dp"
+        <!-- 1. 页面大标题：再下移半行(68dp) -->
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="彩色字母简称 (如 CN)"
-            android:checked="true"/>
+            android:layout_marginTop="68dp"
+            android:layout_marginBottom="24dp"
+            android:gravity="center"
+            android:text="网络信息监视"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
 
-        <RadioButton
-            android:id="@+id/rbFlag"
-            android:layout_width="0dp"
+        <!-- 2. 核心网络信息卡片 (磨砂半透明质感) -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="显示国旗图标"/>
-    </RadioGroup>
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#D9FFFFFF"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#1F000000">
 
-    <Button
-        android:id="@+id/btnStart"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="开启状态栏监视" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-    <Button
-        android:id="@+id/btnStop"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="关闭服务"
-        android:layout_marginTop="12dp" />
+                <!-- 公网 IP -->
+                <TextView
+                    android:id="@+id/tvIp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:gravity="start|center_vertical"
+                    android:text="当前公网 IP：正在获取..."
+                    android:textColor="#2563EB"
+                    android:textSize="16sp"
+                    android:textStyle="normal" />
 
-</LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="6dp"
+                    android:background="#10000000" />
+
+                <!-- 中文归属地 -->
+                <TextView
+                    android:id="@+id/tvLocation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:gravity="start|center_vertical"
+                    android:text="中文归属地：正在查询..."
+                    android:textColor="#2563EB"
+                    android:textSize="16sp"
+                    android:textStyle="normal" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 3. 网络详细参数卡片 (磨砂半透明质感) -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#D9FFFFFF"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#1F000000">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- 运营商 -->
+                <TextView
+                    android:id="@+id/tvIsp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:gravity="start|center_vertical"
+                    android:text="网络运营商：--"
+                    android:textColor="#2563EB"
+                    android:textSize="16sp"
+                    android:textStyle="normal" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="6dp"
+                    android:background="#10000000" />
+
+                <!-- 接口来源 -->
+                <TextView
+                    android:id="@+id/tvApiSource"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:gravity="start|center_vertical"
+                    android:text="数据接口来源：--"
+                    android:textColor="#2563EB"
+                    android:textSize="16sp"
+                    android:textStyle="normal" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 4. 状态栏图标显示模式卡片 (磨砂半透明质感，标题彩色居中) -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            app:cardBackgroundColor="#D9FFFFFF"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="2dp"
+            app:strokeWidth="1dp"
+            app:strokeColor="#1F000000">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- 标题：彩色 (#2563EB) 且居中 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:gravity="center"
+                    android:text="状态栏显示模式"
+                    android:textColor="#2563EB"
+                    android:textSize="16sp"
+                    android:textStyle="normal" />
+
+                <RadioGroup
+                    android:id="@+id/rgIconMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rbText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:checked="true"
+                        android:minHeight="48dp"
+                        android:text="彩色字母简称 (如 CN)"
+                        android:textColor="#2563EB"
+                        android:textSize="16sp"
+                        android:textStyle="normal" />
+
+                    <RadioButton
+                        android:id="@+id/rbFlag"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minHeight="48dp"
+                        android:text="显示国旗图标"
+                        android:textColor="#2563EB"
+                        android:textSize="16sp"
+                        android:textStyle="normal" />
+                </RadioGroup>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- 5. 操作控制按钮区 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="开启状态栏监视"
+            android:textSize="16sp"
+            app:cornerRadius="12dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnStop"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="12dp"
+            android:text="关闭服务"
+            android:textSize="16sp"
+            app:cornerRadius="12dp" />
+
+    </LinearLayout>
+</ScrollView>

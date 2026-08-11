@@ -1,9 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+
     <!-- Base application theme. -->
-    <style name="Base.Theme.NetworkInformation" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    <style name="Theme.NetworkInformation" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 主色与辅色 -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+
+        <!-- 背景与表面色 -->
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="colorSurface">@color/card_background</item>
+
+        <!-- 沉浸式状态栏与导航栏配置 -->
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 
-    <style name="Theme.NetworkInformation" parent="Base.Theme.NetworkInformation" />
 </resources>

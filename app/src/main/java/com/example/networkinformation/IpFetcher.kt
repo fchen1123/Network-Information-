@@ -1,188 +1,332 @@
 package com.example.networkinformation
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import android.util.Log
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-
-data class IpInfo(
-    val ip: String,
-    val countryCode: String,
-    val countryName: String,
-    val regionName: String,
-    val cityName: String,
-    val isp: String,
-    val apiSource: String
-) {
-    /**
-     * 智能获取全中文地址，自动拼音/英文转中文并处理重复项
-     */
-    fun getChineseAddress(): String {
-        val cnCountry = translateToChinese(countryName)
-        val cnRegion = translateToChinese(regionName)
-        val cnCity = translateToChinese(cityName)
-
-        val parts = mutableListOf<String>()
-
-        if (cnCountry.isNotBlank() && cnCountry != "未连接" && cnCountry != "NC") {
-            parts.add(cnCountry)
-        }
-
-        if (cnRegion.isNotBlank() && cnRegion != cnCountry && cnRegion != "??") {
-            parts.add(cnRegion)
-        }
-
-        if (cnCity.isNotBlank() && cnCity != cnRegion && cnCity != cnCountry && cnCity != "??") {
-            parts.add(cnCity)
-        }
-
-        val result = parts.joinToString(" ").trim()
-        return if (result.isBlank()) "网络断开/未连接" else result
-    }
-
-    /**
-     * 常见英文/拼音国家与省市翻译表兜底
-     */
-    private fun translateToChinese(text: String): String {
-        if (text.isBlank()) return ""
-
-        // 包含中文字符直接返回（已将 it.toInt() 修正为 it.code）
-        if (text.any { it.code in 0x4E00..0x9FA5 }) {
-            return text
-        }
-
-        // 英文地名映射字典
-        val map = mapOf(
-            "China" to "中国",
-            "United States" to "美国",
-            "Japan" to "日本",
-            "Singapore" to "新加坡",
-            "Hong Kong" to "中国香港",
-            "Taiwan" to "中国台湾",
-            "Macau" to "中国澳门",
-            "Germany" to "德国",
-            "United Kingdom" to "英国",
-            "Korea" to "韩国",
-            "South Korea" to "韩国",
-            "Guangdong" to "广东省",
-            "Shenzhen" to "深圳市",
-            "Guangzhou" to "广州市",
-            "Beijing" to "北京市",
-            "Shanghai" to "上海市"
-        )
-
-        return map[text] ?: text
-    }
-}
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 object IpFetcher {
+    private const val TAG = "IpFetcher"
+    private val ROTATE_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1)
 
-    suspend fun fetchIpInfo(): IpInfo = withContext(Dispatchers.IO) {
-        fetchFromIpApi()
-            ?: fetchFromIpWhoIs()
-            ?: fetchFromIpWhoisApp()
-            // 节点不通/完全断网时的统一标记代码 "NC"
-            ?: IpInfo("未连接", "NC", "未连接", "", "", "无网络供应", "网络连接超时")
-    }
+    private var cachedResult: IpInfo? = null
+    private var lastFetchTimestamp: Long = 0L
 
-    /**
-     * 节点 1：ip-api.com (指定 lang=zh-CN)
-     */
-    private fun fetchFromIpApi(): IpInfo? {
-        return try {
-            val url = URL("http://ip-api.com/json/?lang=zh-CN&fields=query,country,countryCode,regionName,city,isp")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 3000
-                readTimeout = 3000
-                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9")
+    suspend fun fetchIpInfo(): IpInfo {
+        val now = System.currentTimeMillis()
+        cachedResult?.let {
+            if (now - lastFetchTimestamp < ROTATE_INTERVAL_MS && it.ip.isNotBlank()) {
+                Log.d(TAG, "使用1分钟缓存数据")
+                return it
             }
-
-            if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseText)
-                IpInfo(
-                    ip = json.optString("query", "未连接"),
-                    countryCode = json.optString("countryCode", "NC"),
-                    countryName = json.optString("country", "未连接"),
-                    regionName = json.optString("regionName", ""),
-                    cityName = json.optString("city", ""),
-                    isp = json.optString("isp", "未知运营商"),
-                    apiSource = "ip-api.com"
-                )
-            } else null
-        } catch (e: Exception) {
-            null
         }
+
+        var result: IpInfo? = null
+
+        // --------1. 优先使用全球通用源 (开启代理/出国网络能精准识别出口 IP)--------
+        result = fetchIpWhoIs()
+        if (result != null) return updateCache(result, now)
+
+        // 新增备用源：ip-api.com (运营商与ASN极为精准，绝无街道门牌干扰)
+        result = fetchIpApiCom()
+        if (result != null) return updateCache(result, now)
+
+        result = fetchIpSb()
+        if (result != null) return updateCache(result, now)
+
+        // --------2. 海外源全未响应时，尝试国内源兜底--------
+        Log.i(TAG, "全球/海外 GeoIP 接口未响应，切换国内直连接口")
+
+        result = fetchBilibili()
+        if (result != null) return updateCache(result, now)
+
+        result = fetchPconline()
+        if (result != null) return updateCache(result, now)
+
+        Log.w(TAG, "所有接口请求失败")
+        return IpInfo(
+            ip = "未连接",
+            countryCode = "NC",
+            countryName = "未连接",
+            regionName = "",
+            cityName = "",
+            districtName = "",
+            isp = "无网络供应",
+            apiSource = "所有接口请求失败"
+        )
     }
 
-    /**
-     * 节点 2：ipwho.is (新增 ?lang=zh-CN 参数)
-     */
-    private fun fetchFromIpWhoIs(): IpInfo? {
+    private fun updateCache(info: IpInfo, timestamp: Long): IpInfo {
+        cachedResult = info
+        lastFetchTimestamp = timestamp
+        return info
+    }
+
+    /* ---------------- ipwho.is 源 (带门牌过滤) ---------------- */
+    private fun fetchIpWhoIs(): IpInfo? {
+        var conn: HttpURLConnection? = null
         return try {
-            val url = URL("http://ipwho.is/?lang=zh-CN")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
+            val url = URL("https://ipwho.is/?lang=zh-CN")
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 3000
                 readTimeout = 3000
-                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                setRequestProperty("Connection", "close")
             }
 
             if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseText)
+                val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                if (!text.trim().startsWith("{")) return null
 
+                val json = JSONObject(text)
                 if (json.optBoolean("success", false)) {
-                    val connectionObj = json.optJSONObject("connection")
+                    val ip = json.optString("ip").trim()
+                    if (ip.isBlank()) return null
+
+                    val connObj = json.optJSONObject("connection")
+                    val org = connObj?.optString("org", "")?.trim() ?: ""
+                    val isp = connObj?.optString("isp", "")?.trim() ?: ""
+
+                    val rawIsp = when {
+                        org.isNotBlank() && !isAddressLike(org) -> org
+                        isp.isNotBlank() && !isAddressLike(isp) -> isp
+                        else -> org.ifBlank { isp }
+                    }
+
                     IpInfo(
-                        ip = json.optString("ip", "未连接"),
-                        countryCode = json.optString("country_code", "NC"),
-                        countryName = json.optString("country", "未连接"),
+                        ip = ip,
+                        countryCode = json.optString("country_code", "NC").uppercase(),
+                        countryName = json.optString("country", ""),
                         regionName = json.optString("region", ""),
                         cityName = json.optString("city", ""),
-                        isp = connectionObj?.optString("isp", "未知运营商") ?: "未知运营商",
+                        districtName = json.optString("district", ""),
+                        isp = parseIsp(rawIsp),
                         apiSource = "ipwho.is"
                     )
                 } else null
             } else null
         } catch (e: Exception) {
+            Log.e(TAG, "ipwho.is 接口异常: ${e.message}")
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 
-    /**
-     * 节点 3：ipwhois.app (支持中文的备用节点)
-     */
-    private fun fetchFromIpWhoisApp(): IpInfo? {
+    /* ---------------- 新增备用源：ip-api.com (精准运营商与ASN) ---------------- */
+    private fun fetchIpApiCom(): IpInfo? {
+        var conn: HttpURLConnection? = null
         return try {
-            val url = URL("https://ipwhois.app/json/?lang=zh-CN")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
+            // 请求指定字段，包含 status, query, countryCode, country, regionName, city, isp, org, as
+            val url = URL("http://ip-api.com/json/?fields=status,query,countryCode,country,regionName,city,isp,org,as")
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 3000
                 readTimeout = 3000
-                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                setRequestProperty("Connection", "close")
             }
 
             if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseText)
+                val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val json = JSONObject(text)
+                if (json.optString("status") == "success") {
+                    val ip = json.optString("query").trim()
+                    if (ip.isBlank()) return null
 
-                if (json.optBoolean("success", false)) {
+                    val org = json.optString("org", "").trim()
+                    val isp = json.optString("isp", "").trim()
+                    val asInfo = json.optString("as", "").trim() // 格式如: AS7473 SingNet Pty Ltd
+
+                    val rawIsp = when {
+                        org.isNotBlank() && !isAddressLike(org) -> org
+                        isp.isNotBlank() && !isAddressLike(isp) -> isp
+                        asInfo.isNotBlank() -> asInfo
+                        else -> org.ifBlank { isp }
+                    }
+
                     IpInfo(
-                        ip = json.optString("ip", "未连接"),
-                        countryCode = json.optString("country_code", "NC"),
-                        countryName = json.optString("country", "未连接"),
-                        regionName = json.optString("region", ""),
+                        ip = ip,
+                        countryCode = json.optString("countryCode", "").uppercase(),
+                        countryName = json.optString("country", ""),
+                        regionName = json.optString("regionName", ""),
                         cityName = json.optString("city", ""),
-                        isp = json.optString("isp", "未知运营商"),
-                        apiSource = "ipwhois.app"
+                        districtName = "",
+                        isp = parseIsp(rawIsp),
+                        apiSource = "ip-api.com"
                     )
                 } else null
             } else null
         } catch (e: Exception) {
+            Log.e(TAG, "ip-api.com 接口异常: ${e.message}")
             null
+        } finally {
+            conn?.disconnect()
         }
+    }
+
+    /* ---------------- IP.SB 海外源 ---------------- */
+    private fun fetchIpSb(): IpInfo? {
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL("https://api.ip.sb/geoip")
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 3000
+                readTimeout = 3000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                setRequestProperty("Connection", "close")
+            }
+
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val json = JSONObject(text)
+                val ip = json.optString("ip").trim()
+                if (ip.isBlank()) return null
+
+                IpInfo(
+                    ip = ip,
+                    countryCode = json.optString("country_code", "").uppercase(),
+                    countryName = json.optString("country", ""),
+                    regionName = json.optString("region", ""),
+                    cityName = json.optString("city", ""),
+                    districtName = "",
+                    isp = parseIsp(json.optString("organization", "")),
+                    apiSource = "IP-SB"
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "IP-SB 接口异常: ${e.message}")
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /* ---------------- Bilibili 源 (国内直连) ---------------- */
+    private fun fetchBilibili(): IpInfo? {
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL("https://api.bilibili.com/x/web-interface/zone")
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 2500
+                readTimeout = 2500
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                setRequestProperty("Connection", "close")
+            }
+
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val json = JSONObject(text)
+                if (json.optInt("code", -1) == 0) {
+                    val data = json.optJSONObject("data") ?: return null
+                    val ip = data.optString("ip").trim()
+                    if (ip.isBlank()) return null
+
+                    val country = data.optString("country", "中国")
+                    val countryCode = if (country == "中国" || country == "China") "CN" else "NC"
+
+                    IpInfo(
+                        ip = ip,
+                        countryCode = countryCode,
+                        countryName = country,
+                        regionName = data.optString("province", ""),
+                        cityName = data.optString("city", ""),
+                        districtName = "",
+                        isp = parseIsp(data.optString("isp", "")),
+                        apiSource = "Bilibili"
+                    )
+                } else null
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Bilibili 接口异常: ${e.message}")
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /* ---------------- Pconline 太平洋电脑网源 ---------------- */
+    private fun fetchPconline(): IpInfo? {
+        var conn: HttpURLConnection? = null
+        return try {
+            val url = URL("https://whois.pconline.com.cn/ipJson.jsp?json=true")
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 2500
+                readTimeout = 2500
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                setRequestProperty("Connection", "close")
+            }
+
+            if (conn.responseCode == 200) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream, "GBK"))
+                val text = reader.use { it.readText() }
+
+                val jsonStr = text.replace("ipJson(", "").replace(");", "").trim()
+                val json = JSONObject(jsonStr)
+                val ip = json.optString("ip").trim()
+                if (ip.isBlank()) return null
+
+                val province = json.optString("pro", "")
+                val countryCode = if (province.isNotBlank()) "CN" else "NC"
+                val countryName = if (province.isNotBlank()) "中国" else ""
+
+                IpInfo(
+                    ip = ip,
+                    countryCode = countryCode,
+                    countryName = countryName,
+                    regionName = province,
+                    cityName = json.optString("city", ""),
+                    districtName = json.optString("region", ""),
+                    isp = parseIsp(json.optString("addr", "")),
+                    apiSource = "Pconline"
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Pconline 接口异常: ${e.message}")
+            null
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * 判断文本是否包含街道/门牌地址特征
+     */
+    private fun isAddressLike(text: String): Boolean {
+        if (text.isBlank()) return false
+        val s = text.lowercase(Locale.ROOT)
+        val addressRegex = Regex(".*\\b(street|st\\.|st|road|rd\\.|rd|avenue|ave|drive|dr|boulevard|blvd|suite|ste|unit|building|bldg|p\\.o\\. box|postal|lane|ln|way|court|ct|floor|fl)\\b.*")
+        val numberStreetRegex = Regex(".*\\d{1,5}\\s+[a-z]+.*")
+        return s.matches(addressRegex) || s.matches(numberStreetRegex)
+    }
+
+    private fun parseIsp(raw: String): String {
+        if (raw.isBlank()) return "未知运营商"
+        var cleaned = raw.trim()
+
+        if (isAddressLike(cleaned)) {
+            return "数据中心 / 专线网络"
+        }
+
+        val s = cleaned.lowercase(Locale.ROOT)
+        return when {
+            s.contains("电信") || s.contains("chinanet") || s.contains("chinatelecom") -> "中国电信"
+            s.contains("移动") || s.contains("chinamobile") || s.contains("cmcc") -> "中国移动"
+            s.contains("联通") || s.contains("chinaunicom") || s.contains("unicom") -> "中国联通"
+            s.contains("广电") || s.contains("broadnet") -> "中国广电"
+            s.contains("cloudflare") -> "Cloudflare"
+            s.contains("google") -> "Google Cloud"
+            s.contains("amazon") || s.contains("aws") -> "Amazon AWS"
+            s.contains("singtel") -> "Singapore Telecommunications"
+            else -> cleaned
+        }
+    }
+
+    fun clearCache() {
+        cachedResult = null
+        lastFetchTimestamp = 0L
     }
 }

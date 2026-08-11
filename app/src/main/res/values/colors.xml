@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 主调品牌色 (极简科技蓝) -->
+    <color name="primary">#2563EB</color>
+    <color name="primary_dark">#1D4ED8</color>
+    <color name="accent">#3B82F6</color>
+
+    <!-- 状态与辅助色 -->
+    <color name="card_stroke">#1F000000</color>
+    <color name="divider_color">#0F000000</color>
+
+    <!-- 背景与卡片填充色 -->
+    <color name="window_background">#F8FAFC</color>
+    <color name="card_background">#FFFFFF</color>
+
+    <!-- 基础黑白 -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

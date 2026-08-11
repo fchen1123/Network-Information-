@@ -1,30 +1,53 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="85.84757"
-                android:endY="92.4963"
-                android:startX="42.9492"
-                android:startY="49.59793"
-                android:type="linear">
-                <item
-                    android:color="#44000000"
-                    android:offset="0.0" />
-                <item
-                    android:color="#00000000"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+
+    <!-- 1. 科技深色底座 (缩小尺寸，边缘留白 15% 防止裁切) -->
     <path
-        android:fillColor="#FFFFFF"
-        android:fillType="nonZero"
-        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
-        android:strokeWidth="1"
-        android:strokeColor="#00000000" />
+        android:fillColor="#0F172A"
+        android:pathData="M54,26 C68,26 80,30 80,54 C80,78 68,82 54,82 C40,82 28,78 28,54 C28,30 40,26 54,26 Z"/>
+
+    <!-- 2. 底座内部微光渐变层/光晕 -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M54,30 C65,30 75,33 75,54 C75,75 65,78 54,78 C43,78 33,75 33,54 C33,33 43,30 54,30 Z"/>
+
+    <!-- 3. 背景网格点 (增加细节与科技沉浸感) -->
+    <path
+        android:fillColor="#334155"
+        android:pathData="M42,42h2v2h-2z M53,42h2v2h-2z M64,42h2v2h-2z M42,64h2v2h-2z M53,64h2v2h-2z M64,64h2v2h-2z"/>
+
+    <!-- 4. 波形发光底层 (霓虹发光与立体光效) -->
+    <path
+        android:strokeColor="#0284C7"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M35,54 H44 L49,39 L57,69 L63,48 L68,54 H73"/>
+
+    <!-- 5. 核心脉冲折线 (高亮天蓝色) -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M35,54 H44 L49,39 L57,69 L63,48 L68,54 H73"/>
+
+    <!-- 6. 端点数据包接入节点 (左侧) -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M35,54 C35,52.34 33.66,51 32,51 C30.34,51 29,52.34 29,54 C29,55.66 30.34,57 32,57 C33.66,57 35,55.66 35,54 Z"/>
+
+    <!-- 7. 实时监视脉冲指示灯 (右侧双层外发光节点) -->
+    <path
+        android:fillColor="#059669"
+        android:pathData="M68,54 C68,50.69 70.69,48 74,48 C77.31,48 80,50.69 80,54 C80,57.31 77.31,60 74,60 C70.69,60 68,57.31 68,54 Z"/>
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M71,54 C71,52.34 72.34,51 74,51 C75.66,51 77,52.34 77,54 C77,55.66 75.66,57 74,57 C72.34,57 71,55.66 71,54 Z"/>
+
 </vector>
