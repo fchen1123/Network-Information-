@@ -39,3 +39,7 @@
 ## 📄 许可证 (License)
 
 本项目采用 [MIT License](LICENSE) 开源许可证。
+<img width="1248" height="1972" alt="Image" src="https://github.com/user-attachments/assets/22e7ad26-afe5-499e-881c-c298d212b283" />
+<img width="1248" height="1972" alt="Image" src="https://github.com/user-attachments/assets/01756c5e-461a-40cb-9c3d-5e3ae263f789" />
+<img width="1248" height="1972" alt="Image" src="https://github.com/user-attachments/assets/734ad25d-03be-4aa6-9b5f-7c051bb0dd4d" />
+<img width="1248" height="1972" alt="Image" src="https://github.com/user-attachments/assets/8437a2e5-6cd6-4484-bb95-caa6fc0b0535" />
