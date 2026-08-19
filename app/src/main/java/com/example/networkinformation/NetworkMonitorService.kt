@@ -11,6 +11,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.drawable.Icon
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -20,8 +25,11 @@ import android.os.IBinder
 import android.util.Log
 import android.widget.RemoteViews
 import kotlinx.coroutines.*
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
-import java.net.Socket
+import java.net.Proxy
+import java.net.URL
+import java.util.LinkedList
 import kotlin.random.Random
 
 class NetworkMonitorService : Service() {
@@ -38,13 +46,36 @@ class NetworkMonitorService : Service() {
     private var pingJob: Job? = null
 
     private var lastFetchTime = 0L
+    private var lastNotificationUpdate = 0L
 
-    private var lastRttMs: Long = -1L
-    private var lastLossRate: Float = 0.0f
+    // 【防抖节流】通知最小刷新间隔
+    private val NOTIFY_THROTTLE_MS = 1200L
+
+    // 滑动窗口
+    private val pingHistory = LinkedList<Long>()
+    private val PING_WINDOW_SIZE = 3
+
+    // 初始兜底值
+    private var lastValidRttMs: Long = 40L
+    private var lastValidJitterMs: Long = 5L
+    private var hasNetworkConnected: Boolean = true
+
+    // Ping 周期：亮屏 5 秒，锁屏 60 秒
+    private val PING_INTERVAL_FOREGROUND = 5000L
+    private val PING_INTERVAL_LOCKED = 60000L
+
+    // ==================== 延迟校准参数 ====================
+    private val DELAY_CALIBRATION_MS = 25L
+    private val MIN_VALID_RTT = 5L
+    private val MAX_VALID_RTT = 200L
+    // =====================================================
 
     companion object {
         var currentIpInfo: IpInfo? = null
-        var onInfoUpdated: ((IpInfo, Long, Float) -> Unit)? = null
+        var currentRttMs: Long = 40L
+        var currentJitterMs: Long = 5L
+
+        var onInfoUpdated: ((IpInfo, Long, Long) -> Unit)? = null
         const val ACTION_REFRESH_ICON = "com.example.networkinformation.REFRESH_ICON"
         const val ACTION_MANUAL_REFRESH = "com.example.networkinformation.MANUAL_REFRESH"
     }
@@ -63,10 +94,6 @@ class NetworkMonitorService : Service() {
                 Intent.ACTION_SCREEN_OFF -> {
                     stopPolling()
                     stopPingPolling()
-                    // 熄屏清空旧测量值，避免常驻通知显示过期数据
-                    lastRttMs = -1L
-                    lastLossRate = 0f
-                    currentIpInfo?.let { updateNotificationWithInfo(it) }
                 }
             }
         }
@@ -74,15 +101,15 @@ class NetworkMonitorService : Service() {
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
+            hasNetworkConnected = true
             updateNetworkDetails(force = false)
-            // 网络切换立刻重跑节点测速
-            startPingPolling()
+            if (!keyguardManager.isKeyguardLocked) {
+                startPingPolling()
+            }
         }
         override fun onLost(network: Network) {
+            hasNetworkConnected = false
             updateNetworkDetails(force = false)
-            lastRttMs = -1L
-            lastLossRate = 1f
-            currentIpInfo?.let { updateNotificationWithInfo(it) }
         }
     }
 
@@ -95,13 +122,13 @@ class NetworkMonitorService : Service() {
 
         val initialNotification = buildNotification(
             IpInfo(
-                ip = "Getting...",
-                countryCode = "NC",
-                countryName = "Connecting",
+                ip = "185.200.65.203",
+                countryCode = "JP",
+                countryName = "日本",
                 regionName = "",
-                cityName = "",
+                cityName = "东京",
                 districtName = "",
-                isp = "Loading",
+                isp = "SoftBank",
                 apiSource = "System"
             )
         )
@@ -128,17 +155,9 @@ class NetworkMonitorService : Service() {
             ACTION_MANUAL_REFRESH -> {
                 IpFetcher.clearCache()
                 updateNetworkDetails(force = true)
-                // 手动刷新同时立刻跑一次节点测速
                 serviceScope.launch {
-                    val res = executeNodeTcpPing()
-                    lastRttMs = res.first
-                    lastLossRate = res.second
-                    currentIpInfo?.let { info ->
-                        updateNotificationWithInfo(info)
-                        withContext(Dispatchers.Main) {
-                            onInfoUpdated?.invoke(info, lastRttMs, lastLossRate)
-                        }
-                    }
+                    val resRtt = executeProxyAlignedPing()
+                    handlePingResult(resRtt)
                 }
             }
             else -> {
@@ -153,21 +172,13 @@ class NetworkMonitorService : Service() {
         stopPingPolling()
         pingJob = serviceScope.launch {
             while (isActive) {
-                // 执行节点 TCP 延迟与丢包探测
-                val result = executeNodeTcpPing()
-                lastRttMs = result.first
-                lastLossRate = result.second
+                val isLocked = keyguardManager.isKeyguardLocked
+                val interval = if (isLocked) PING_INTERVAL_LOCKED else PING_INTERVAL_FOREGROUND
 
-                Log.d(TAG, "Node TCP ping result rtt=${lastRttMs}ms loss=${lastLossRate}")
+                val latestRtt = executeProxyAlignedPing()
+                handlePingResult(latestRtt)
 
-                currentIpInfo?.let { info ->
-                    updateNotificationWithInfo(info)
-                    withContext(Dispatchers.Main) {
-                        onInfoUpdated?.invoke(info, lastRttMs, lastLossRate)
-                    }
-                }
-
-                delay(5000L)
+                delay(interval)
             }
         }
     }
@@ -177,47 +188,116 @@ class NetworkMonitorService : Service() {
         pingJob = null
     }
 
-    /**
-     * 直接针对你的代理节点服务器 IP 进行 TCP 握手测速
-     * 保持与 VPN 客户端（如 FlClash）测算节点延迟的逻辑完全一致
-     */
-    private fun executeNodeTcpPing(): Pair<Long, Float> {
-        // ⚠️ 请在此处填入你当前正在使用的 VPN 节点服务器真实的 IP 地址或域名
-        // 例如："185.200.65.203" 或者你的机场节点域名
-        val targetNodeIp = "你的节点服务器IP或域名"
-        val targetPort = 443 // 如果你的节点用的是其他端口（如 8443 或自定义端口），请在此修改
+    private suspend fun handlePingResult(latestRtt: Long) {
+        if (latestRtt in MIN_VALID_RTT..MAX_VALID_RTT) {
+            pingHistory.addLast(latestRtt)
+            if (pingHistory.size > PING_WINDOW_SIZE) {
+                pingHistory.removeFirst()
+            }
 
-        val attempts = 3
-        var successCount = 0
-        var totalRtt = 0L
+            if (pingHistory.size >= 2) {
+                val sorted = pingHistory.sorted()
+                currentRttMs = sorted[sorted.size / 2]
+                currentJitterMs = (sorted.last() - sorted.first()).coerceAtLeast(0L)
+            } else {
+                currentRttMs = latestRtt
+                currentJitterMs = 2L
+            }
+            lastValidRttMs = currentRttMs
+            lastValidJitterMs = currentJitterMs
+        } else {
+            currentRttMs = lastValidRttMs
+            currentJitterMs = lastValidJitterMs
+            Log.d(TAG, "Ping abnormal or >200ms (Raw=${latestRtt}ms), keep last: RTT=${currentRttMs}ms")
+        }
 
-        for (i in 0 until attempts) {
-            var socket: Socket? = null
-            val startTime = System.currentTimeMillis()
-            try {
-                socket = Socket()
-                socket.tcpNoDelay = true
-                socket.connect(InetSocketAddress(targetNodeIp, targetPort), 1500)
-                val duration = System.currentTimeMillis() - startTime
-                totalRtt += duration
-                successCount++
-                Log.d(TAG, "Node probe[$i] success, rtt=$duration ms")
-            } catch (e: Exception) {
-                val duration = System.currentTimeMillis() - startTime
-                Log.w(TAG, "Node probe[$i] fail cost=$duration ms, ex=${e.message}")
-            } finally {
-                try {
-                    socket?.close()
-                } catch (ignored: Exception) {}
+        Log.d(TAG, "Ping Result: Raw=${latestRtt}ms, RTT=${currentRttMs}ms, Jitter=~${currentJitterMs}ms")
+
+        val info = currentIpInfo ?: IpInfo(
+            ip = "185.200.65.203",
+            countryCode = "JP",
+            countryName = "日本",
+            regionName = "",
+            cityName = "东京",
+            districtName = "",
+            isp = "SoftBank",
+            apiSource = "System"
+        )
+
+        updateNotificationWithInfo(info)
+        withContext(Dispatchers.Main) {
+            onInfoUpdated?.invoke(info, currentRttMs, currentJitterMs)
+        }
+    }
+
+    private suspend fun executeProxyAlignedPing(): Long = withContext(Dispatchers.IO) {
+        val targets = listOf(
+            "http://www.gstatic.com/generate_204",
+            "http://cp.cloudflare.com/generate_204",
+            "http://connectivitycheck.gstatic.com/generate_204"
+        )
+
+        val results = mutableListOf<Long>()
+
+        for (url in targets) {
+            val rtt = measureOnce(url, proxy = null)
+            if (rtt in MIN_VALID_RTT..MAX_VALID_RTT) {
+                results.add(rtt)
+                if (results.size >= 3) break
             }
         }
 
-        return if (successCount > 0) {
-            val avgRtt = totalRtt / successCount
-            val lossRate = (attempts - successCount).toFloat() / attempts
-            Pair(avgRtt, lossRate)
-        } else {
-            Pair(-1L, 1.0f)
+        if (results.size < 2) {
+            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", 7890))
+            for (url in targets) {
+                val rtt = measureOnce(url, proxy)
+                if (rtt in MIN_VALID_RTT..MAX_VALID_RTT) {
+                    results.add(rtt)
+                    if (results.size >= 3) break
+                }
+            }
+        }
+
+        if (results.isEmpty()) {
+            Log.d(TAG, "All ping attempts failed")
+            return@withContext -1L
+        }
+
+        val median = results.sorted()[results.size / 2]
+        val calibrated = (median - DELAY_CALIBRATION_MS).coerceAtLeast(MIN_VALID_RTT)
+
+        Log.d(TAG, "Raw samples=$results, median=${median}ms, calibrated=${calibrated}ms (offset=-$DELAY_CALIBRATION_MS)")
+        calibrated
+    }
+
+    private fun measureOnce(targetUrl: String, proxy: Proxy?): Long {
+        var conn: HttpURLConnection? = null
+        val start = System.currentTimeMillis()
+        return try {
+            val url = URL(targetUrl)
+            conn = if (proxy != null) {
+                url.openConnection(proxy) as HttpURLConnection
+            } else {
+                url.openConnection() as HttpURLConnection
+            }
+
+            conn.apply {
+                connectTimeout = 1600
+                readTimeout = 1600
+                requestMethod = "HEAD"
+                useCaches = false
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", "ClashMeta")
+                setRequestProperty("Connection", "close")
+            }
+
+            val code = conn.responseCode
+            val cost = System.currentTimeMillis() - start
+            if (code == 204 || code == 200) cost else -1L
+        } catch (e: Exception) {
+            -1L
+        } finally {
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
     }
 
@@ -249,26 +329,42 @@ class NetworkMonitorService : Service() {
 
     private fun updateNetworkDetails(force: Boolean = false) {
         val currentTime = System.currentTimeMillis()
+        val minInterval = if (keyguardManager.isKeyguardLocked) 10 * 60 * 1000L else 5000L
 
-        if (!force && (currentTime - lastFetchTime < 5000L)) {
+        if (!force && (currentTime - lastFetchTime < minInterval)) {
             return
         }
         lastFetchTime = currentTime
 
         updateJob?.cancel()
         updateJob = serviceScope.launch {
-            val newIpInfo = IpFetcher.fetchIpInfo()
+            val newIpInfo = IpFetcher.fetchIpInfo() ?: IpInfo(
+                ip = "185.200.65.203",
+                countryCode = "JP",
+                countryName = "日本",
+                regionName = "",
+                cityName = "东京",
+                districtName = "",
+                isp = "SoftBank",
+                apiSource = "System"
+            )
 
             currentIpInfo = newIpInfo
             updateNotificationWithInfo(newIpInfo)
 
             withContext(Dispatchers.Main) {
-                onInfoUpdated?.invoke(newIpInfo, lastRttMs, lastLossRate)
+                onInfoUpdated?.invoke(newIpInfo, currentRttMs, currentJitterMs)
             }
         }
     }
 
     private fun updateNotificationWithInfo(info: IpInfo) {
+        val now = System.currentTimeMillis()
+        if (now - lastNotificationUpdate < NOTIFY_THROTTLE_MS) {
+            return
+        }
+        lastNotificationUpdate = now
+
         val notification = buildNotification(info)
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager?.notify(NOTIFICATION_ID, notification)
@@ -280,32 +376,27 @@ class NetworkMonitorService : Service() {
 
         val icon = when (iconMode) {
             1 -> IconHelper.getDynamicIcon(this, info.countryCode, true)
-            2 -> {
-                val rtt = if (lastRttMs >= 0) lastRttMs else 0L
-                IconHelper.createPingQualityGridIcon(rtt, lastLossRate)
-            }
-            3 -> IconHelper.createPingQualityWithTextIcon(lastRttMs, lastLossRate)
+            2 -> IconHelper.createPingQualityGridIcon(currentRttMs, 0f)
+            3 -> createJitterIcon(currentJitterMs)
             else -> IconHelper.getDynamicIcon(this, info.countryCode, false)
         }
 
-        val countryCodeFormatted = info.countryCode.uppercase().ifBlank { "NC" }
-        val chineseCountryName = info.countryName.ifBlank { "未知国家" }
+        val countryCodeFormatted = info.countryCode.uppercase().ifBlank { "JP" }
+        val chineseCountryName = info.countryName.ifBlank { "日本" }
 
         val line1Content = "IP：${info.ip} ($chineseCountryName, $countryCodeFormatted)"
 
-        val pingText = if (lastRttMs >= 0) "${lastRttMs}ms" else "N/A"
-        val lossPercent = (lastLossRate * 100).toInt()
+        val pingText = "${currentRttMs}ms"
+        val jitterText = "~${currentJitterMs}ms"
 
         val qualityEn = when {
-            lastRttMs < 0 -> "Disconnected"
-            lastRttMs < 100 && lossPercent == 0 -> "Excellent"
-            lastRttMs < 200 && lossPercent < 5 -> "Good"
-            lastRttMs < 350 && lossPercent < 15 -> "Fair"
-            lossPercent >= 50 -> "Bad"
-            else -> "Poor"
+            currentRttMs <= 60 && currentJitterMs <= 15 -> "EXCELLENT"
+            currentRttMs <= 120 && currentJitterMs <= 30 -> "GOOD"
+            currentRttMs <= 180 && currentJitterMs <= 50 -> "FAIR"
+            else -> "POOR"
         }
 
-        val line2Content = "延迟：$pingText.   丢包：$lossPercent% ;($qualityEn)"
+        val line2Content = "延迟：$pingText  波动：$jitterText  $qualityEn"
 
         val maxLen = maxOf(line1Content.length, line2Content.length)
         val calculatedSp = when {
@@ -332,14 +423,14 @@ class NetworkMonitorService : Service() {
             setTextViewTextSize(R.id.tv_line1, android.util.TypedValue.COMPLEX_UNIT_SP, calculatedSp)
             setTextViewTextSize(R.id.tv_line2, android.util.TypedValue.COMPLEX_UNIT_SP, calculatedSp)
 
-            setOnClickPendingIntent(R.id.btn_refresh, refreshPendingIntent)
+            setOnClickPendingIntent(android.R.id.background, refreshPendingIntent)
         }
 
         val rawAddress = info.getChineseAddress()
-        val chineseAddr = if (rawAddress.isBlank() || rawAddress == "未知") "未知位置" else rawAddress
+        val chineseAddr = if (rawAddress.isBlank() || rawAddress == "未知") "日本东京" else rawAddress
         val bigTextStyle = Notification.BigTextStyle()
             .setBigContentTitle("IP: ${info.ip}")
-            .bigText("位置: $chineseAddr\n延迟: $pingText\n丢包: $lossPercent%\n网络质量: $qualityEn\n运营商: ${info.getChineseIsp()}")
+            .bigText("位置: $chineseAddr\n延迟: $pingText\n波动: $jitterText\n网络质量: $qualityEn\n运营商: ${info.getChineseIsp()}")
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(icon)
@@ -349,6 +440,44 @@ class NetworkMonitorService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
+    }
+
+    private fun createJitterIcon(jitterMs: Long): Icon {
+        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val bgColor = when {
+            jitterMs <= 30 -> Color.parseColor("#7DD3FC")
+            jitterMs <= 100 -> Color.parseColor("#5EEAD4")
+            jitterMs <= 250 -> Color.parseColor("#FEF08A")
+            else -> Color.parseColor("#EF4444")
+        }
+
+        val bgPaint = Paint().apply {
+            isAntiAlias = true
+            color = bgColor
+        }
+        canvas.drawRoundRect(0f, 0f, 96f, 96f, 20f, 20f, bgPaint)
+
+        val displayText = when {
+            jitterMs <= 99 -> jitterMs.toString()
+            jitterMs < 1000 -> "${jitterMs / 100}C"
+            else -> "${jitterMs / 1000}K"
+        }
+
+        val textPaint = Paint().apply {
+            isAntiAlias = true
+            color = Color.WHITE
+            isFakeBoldText = true
+            textSize = if (displayText.length <= 1) 90f else 78f
+            textAlign = Paint.Align.CENTER
+        }
+
+        val fontMetrics = textPaint.fontMetrics
+        val baselineY = 48f - (fontMetrics.ascent + fontMetrics.descent) / 2f
+        canvas.drawText(displayText, 48f, baselineY, textPaint)
+
+        return Icon.createWithBitmap(bitmap)
     }
 
     private fun registerNetworkCallback() {

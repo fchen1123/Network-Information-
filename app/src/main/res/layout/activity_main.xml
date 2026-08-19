@@ -20,7 +20,7 @@
             android:paddingHorizontal="16dp"
             android:paddingBottom="40dp">
 
-            <!-- 1. 页面大标题：网络信息（下移三行，外边距加大会商） -->
+            <!-- 1. 页面大标题：网络信息 -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -32,7 +32,7 @@
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
-            <!-- 2. 核心网络信息卡片（字体放大，新增网络质量展示行） -->
+            <!-- 2. 核心网络信息卡片 -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -40,8 +40,8 @@
                 app:cardBackgroundColor="#1AFFFFFF"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="#33FFFFFF">
+                app:strokeColor="#33FFFFFF"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -55,8 +55,8 @@
                         android:id="@+id/tvIp"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingVertical="4dp"
                         android:gravity="start|center_vertical"
+                        android:paddingVertical="4dp"
                         android:text="🌐 IP：正在获取..."
                         android:textColor="#FFFFFF"
                         android:textSize="16sp" />
@@ -66,8 +66,8 @@
                         android:id="@+id/tvLocation"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingVertical="4dp"
                         android:gravity="start|center_vertical"
+                        android:paddingVertical="4dp"
                         android:text="📍 归属地：正在查询..."
                         android:textColor="#FFFFFF"
                         android:textSize="16sp" />
@@ -77,19 +77,19 @@
                         android:id="@+id/tvIsp"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingVertical="4dp"
                         android:gravity="start|center_vertical"
+                        android:paddingVertical="4dp"
                         android:text="🏢 运营商：--"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp" />
 
-                    <!-- 新增：网络质量行（优良中差 + 彩色阶段标注 + 括号内双字母英文） -->
+                    <!-- 网络质量行 -->
                     <TextView
                         android:id="@+id/tvQuality"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingVertical="4dp"
                         android:gravity="start|center_vertical"
+                        android:paddingVertical="4dp"
                         android:text="⭐ 网络质量：检测中..."
                         android:textColor="#388E3C"
                         android:textSize="16sp"
@@ -101,7 +101,7 @@
                         android:layout_marginVertical="8dp"
                         android:background="#1AFFFFFF" />
 
-                    <!-- 延迟与丢包率并行展示 -->
+                    <!-- 延迟与网络波动并行展示 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -124,7 +124,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:paddingVertical="4dp"
-                            android:text="📉 丢包：0%"
+                            android:text="〰️ 波动：--"
                             android:textColor="#FFFFFF"
                             android:textSize="16sp" />
                     </LinearLayout>
@@ -134,8 +134,8 @@
                         android:id="@+id/tvApiSource"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingVertical="4dp"
                         android:gravity="start|center_vertical"
+                        android:paddingVertical="4dp"
                         android:text="🔗 来源：--"
                         android:textColor="#94A3B8"
                         android:textSize="14sp" />
@@ -155,18 +155,18 @@
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
-            <!-- 4. 胶囊按钮区域（高度加倍：96dp，内部文字调大至 18sp） -->
+            <!-- 4. 胶囊按钮区域 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <!-- 第一行：字母 / 国旗 / 四宫格 -->
+                <!-- 第一行：字母 / 国旗 / 网络延迟 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
                     android:layout_marginBottom="12dp"
+                    android:orientation="horizontal"
                     android:weightSum="3">
 
                     <com.google.android.material.button.MaterialButton
@@ -174,79 +174,80 @@
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
                         android:text="字母"
                         android:textColor="#FFFFFF"
                         android:textSize="18sp"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp"
                         app:cornerRadius="48dp"
-                        app:elevation="0dp" />
+                        app:elevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnFlagMode"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginHorizontal="3dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
                         android:text="国旗"
                         android:textColor="#FFFFFF"
                         android:textSize="18sp"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp"
                         app:cornerRadius="48dp"
-                        app:elevation="0dp" />
+                        app:elevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnGridMode"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginStart="6dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
-                        android:text="四宫格"
+                        android:text="网络延迟"
                         android:textColor="#FFFFFF"
                         android:textSize="18sp"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp"
                         app:cornerRadius="48dp"
-                        app:elevation="0dp" />
+                        app:elevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp" />
                 </LinearLayout>
 
-                <!-- 第二行：字母+测速 / 开启服务 / 关闭服务 -->
+                <!-- 第二行：网络波动 / 开启服务 / 关闭服务 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:weightSum="3">
 
+                    <!-- 修改为网络波动 -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnTextGridMode"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
-                        android:text="字母+测速"
+                        android:text="网络波动"
                         android:textColor="#FFFFFF"
                         android:textSize="18sp"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp"
                         app:cornerRadius="48dp"
-                        app:elevation="0dp" />
+                        app:elevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnStart"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginHorizontal="3dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
                         android:text="开启服务"
                         android:textColor="#FFFFFF"
@@ -260,16 +261,16 @@
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="96dp"
-                        android:layout_weight="1"
                         android:layout_marginStart="6dp"
+                        android:layout_weight="1"
                         android:paddingHorizontal="0dp"
                         android:text="关闭服务"
                         android:textColor="#94A3B8"
                         android:textSize="18sp"
-                        app:strokeColor="#33FFFFFF"
-                        app:strokeWidth="1dp"
                         app:cornerRadius="48dp"
-                        app:elevation="0dp" />
+                        app:elevation="0dp"
+                        app:strokeColor="#33FFFFFF"
+                        app:strokeWidth="1dp" />
                 </LinearLayout>
 
             </LinearLayout>

@@ -1,86 +1,90 @@
 package com.example.networkinformation
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import com.google.android.material.button.MaterialButton
+import com.example.networkinformation.NetworkMonitorService // 显式引入 Service
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvIp: TextView
     private lateinit var tvLocation: TextView
     private lateinit var tvIsp: TextView
-    private lateinit var tvQuality: TextView // 网络质量显示控件
-    private lateinit var tvApiSource: TextView
+    private lateinit var tvQuality: TextView
     private lateinit var tvPing: TextView
     private lateinit var tvLoss: TextView
+    private lateinit var tvApiSource: TextView
 
-    // 4 种图标模式对应的胶囊按钮
     private lateinit var btnTextMode: MaterialButton
     private lateinit var btnFlagMode: MaterialButton
     private lateinit var btnGridMode: MaterialButton
     private lateinit var btnTextGridMode: MaterialButton
+    private lateinit var btnStart: MaterialButton
+    private lateinit var btnStop: MaterialButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 绑定文本视图
+        initViews()
+        setupListeners()
+        updateButtonSelection()
+
+        // 监听后台服务的数据回调 (接收: IpInfo, Rtt, Jitter)
+        NetworkMonitorService.onInfoUpdated = { info, rtt, jitter ->
+            runOnUiThread {
+                displayIpInfo(info, rtt, jitter)
+            }
+        }
+
+        // 如果服务已在运行，使用当前内存缓存展示
+        NetworkMonitorService.currentIpInfo?.let { info ->
+            displayIpInfo(
+                info,
+                NetworkMonitorService.currentRttMs,
+                NetworkMonitorService.currentJitterMs
+            )
+        }
+    }
+
+    private fun initViews() {
         tvIp = findViewById(R.id.tvIp)
         tvLocation = findViewById(R.id.tvLocation)
         tvIsp = findViewById(R.id.tvIsp)
         tvQuality = findViewById(R.id.tvQuality)
-        tvApiSource = findViewById(R.id.tvApiSource)
         tvPing = findViewById(R.id.tvPing)
         tvLoss = findViewById(R.id.tvLoss)
+        tvApiSource = findViewById(R.id.tvApiSource)
 
-        // 绑定 4 个独立模式胶囊按钮
         btnTextMode = findViewById(R.id.btnTextMode)
         btnFlagMode = findViewById(R.id.btnFlagMode)
         btnGridMode = findViewById(R.id.btnGridMode)
         btnTextGridMode = findViewById(R.id.btnTextGridMode)
+        btnStart = findViewById(R.id.btnStart)
+        btnStop = findViewById(R.id.btnStop)
+    }
 
-        val btnStart = findViewById<Button>(R.id.btnStart)
-        val btnStop = findViewById<Button>(R.id.btnStop)
-
-        // 读取并初始化选中的图标模式 (0: 字母, 1: 国旗, 2: 纯4宫格色块, 3: 纯字母测速)
-        val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-        val currentMode = prefs.getInt("icon_mode", 0)
-        updateModeUI(currentMode)
-
-        // 点击事件：切换 4 种模式
+    private fun setupListeners() {
         btnTextMode.setOnClickListener { saveAndApplyMode(0) }
         btnFlagMode.setOnClickListener { saveAndApplyMode(1) }
         btnGridMode.setOnClickListener { saveAndApplyMode(2) }
         btnTextGridMode.setOnClickListener { saveAndApplyMode(3) }
 
-        // 完整接收服务回传的 IP 信息、实时延迟（rttMs）与丢包率（lossRate）
-        NetworkMonitorService.onInfoUpdated = { info, rttMs, lossRate ->
-            displayIpInfo(info, rttMs, lossRate)
-        }
-
         btnStart.setOnClickListener { startMonitorService() }
         btnStop.setOnClickListener { stopMonitorService() }
-
-        checkNotificationPermission()
     }
 
     private fun saveAndApplyMode(mode: Int) {
         val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         prefs.edit().putInt("icon_mode", mode).apply()
+        updateButtonSelection()
 
-        updateModeUI(mode)
-
-        // 如果后台服务正在运行，立即触发它刷新状态栏图标
+        // 通知 Service 刷新状态栏图标
         val intent = Intent(this, NetworkMonitorService::class.java).apply {
             action = NetworkMonitorService.ACTION_REFRESH_ICON
         }
@@ -91,70 +95,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 更新 4 个胶囊按钮的高亮视觉状态
-    private fun updateModeUI(selectedMode: Int) {
-        val activeBg = ColorStateList.valueOf(Color.parseColor("#3B82F6"))
-        val inactiveBg = ColorStateList.valueOf(Color.TRANSPARENT)
-        val activeText = Color.WHITE
-        val inactiveText = Color.parseColor("#94A3B8")
+    private fun updateButtonSelection() {
+        val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val currentMode = prefs.getInt("icon_mode", 0)
+
+        val activeStroke = Color.parseColor("#60A5FA")
+        val inactiveStroke = Color.parseColor("#33FFFFFF")
 
         val buttons = listOf(btnTextMode, btnFlagMode, btnGridMode, btnTextGridMode)
 
         buttons.forEachIndexed { index, button ->
-            if (index == selectedMode) {
-                button.backgroundTintList = activeBg
-                button.setTextColor(activeText)
+            if (index == currentMode) {
+                button.strokeColor = android.content.res.ColorStateList.valueOf(activeStroke)
+                button.strokeWidth = 4
+                button.setBackgroundColor(Color.parseColor("#1E3A8A"))
             } else {
-                button.backgroundTintList = inactiveBg
-                button.setTextColor(inactiveText)
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // 恢复时若已有缓存则直接展示
-        NetworkMonitorService.currentIpInfo?.let {
-            displayIpInfo(it, -1L, 0.0f)
-        }
-    }
-
-    private fun displayIpInfo(info: IpInfo, rttMs: Long, lossRate: Float) {
-        tvIp.text = "🌐 IP：${info.ip}"
-        tvLocation.text = "📍 归属地：${info.getChineseAddress()} (${info.countryCode})"
-        tvIsp.text = "🏢 运营商：${info.getChineseIsp()}"
-        tvApiSource.text = "🔗 来源：${info.apiSource}"
-
-        // 动态展示实时延迟和丢包率
-        tvPing.text = if (rttMs >= 0) "⚡ 延迟：${rttMs}ms" else "⚡ 延迟：检测中..."
-        val lossPercent = (lossRate * 100).toInt()
-        tvLoss.text = "📉 丢包：$lossPercent%"
-
-        // 联动更新主界面上的网络质量评级及颜色
-        updateNetworkQualityUI(rttMs, lossRate)
-    }
-
-    /**
-     * 更新主界面上的网络质量显示（包含优良中差评级、括号内双字母及阶段彩色标注）
-     */
-    private fun updateNetworkQualityUI(rttMs: Long, lossRate: Float) {
-        val (qualityText, colorHex) = when {
-            rttMs < 0 || lossRate >= 1.0f -> Pair("异常 / 断开 (ER)", "#78909C")       // 灰色
-            rttMs < 80 && lossRate <= 0.0f -> Pair("极佳 (EX)", "#388E3C")           // 绿色
-            rttMs < 120 && lossRate <= 0.03f -> Pair("良好 (GD)", "#689F38")         // 浅绿
-            rttMs < 160 && lossRate <= 0.08f -> Pair("一般 (FR)", "#F57C00")         // 橙色
-            rttMs < 220 && lossRate <= 0.15f -> Pair("较差 (PR)", "#E64A19")         // 深橙红
-            else -> Pair("极差 (BD)", "#D32F2F")                                    // 红色
-        }
-
-        tvQuality.text = "⭐ 网络质量：$qualityText"
-        tvQuality.setTextColor(Color.parseColor(colorHex))
-    }
-
-    private fun checkNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+                button.strokeColor = android.content.res.ColorStateList.valueOf(inactiveStroke)
+                button.strokeWidth = 2
+                button.setBackgroundColor(Color.TRANSPARENT)
             }
         }
     }
@@ -171,5 +129,44 @@ class MainActivity : AppCompatActivity() {
     private fun stopMonitorService() {
         val intent = Intent(this, NetworkMonitorService::class.java)
         stopService(intent)
+    }
+
+    private fun displayIpInfo(info: IpInfo, rttMs: Long, jitterMs: Long) {
+        tvIp.text = "🌐 IP：${info.ip}"
+        tvLocation.text = "📍 归属地：${info.getChineseAddress()} (${info.countryCode})"
+        tvIsp.text = "🏢 运营商：${info.getChineseIsp()}"
+        tvApiSource.text = "🔗 来源：${info.apiSource}"
+
+        tvPing.text = if (rttMs >= 0) "⚡ 延迟：${rttMs}ms" else "⚡ 延迟：检测中..."
+        tvLoss.text = if (jitterMs >= 0) "〰️ 波动：~$jitterMs" + "ms" else "〰️ 波动：检测中..."
+
+        updateQualityStatus(rttMs, jitterMs)
+    }
+
+    private fun updateQualityStatus(rttMs: Long, jitterMs: Long) {
+        if (rttMs < 0) {
+            tvQuality.text = "⭐ 网络质量：网络已断开"
+            tvQuality.setTextColor(Color.parseColor("#EF4444"))
+            return
+        }
+
+        when {
+            rttMs <= 60 && jitterMs in 0..15 -> {
+                tvQuality.text = "⭐ 网络质量：极佳"
+                tvQuality.setTextColor(Color.parseColor("#10B981"))
+            }
+            rttMs <= 120 && jitterMs <= 30 -> {
+                tvQuality.text = "⭐ 网络质量：良好"
+                tvQuality.setTextColor(Color.parseColor("#3B82F6"))
+            }
+            rttMs <= 180 && jitterMs <= 50 -> {
+                tvQuality.text = "⭐ 网络质量：一般"
+                tvQuality.setTextColor(Color.parseColor("#F59E0B"))
+            }
+            else -> {
+                tvQuality.text = "⭐ 网络质量：较差"
+                tvQuality.setTextColor(Color.parseColor("#EF4444"))
+            }
+        }
     }
 }

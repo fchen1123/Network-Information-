@@ -119,7 +119,7 @@ object IconHelper {
             isFakeBoldText = true // 笔画加厚
             isAntiAlias = true
             textAlign = Paint.Align.CENTER
-            textSize = 84f // 字号拉满至 84f，极大化提升文字辨识度
+            textSize = 84f // 字号拉满至 84f
         }
 
         // 动态防切边限制（最大可用宽度 88px）
@@ -142,14 +142,17 @@ object IconHelper {
      */
     private fun getCountryBgColor(code: String): Int {
         return when (code.uppercase()) {
-            "CN" -> Color.parseColor("#E53935") // 中国大陆：鲜红
-            "US" -> Color.parseColor("#1976D2") // 美国：标准蓝
-            "HK" -> Color.parseColor("#D81B60") // 中国香港：洋红
-            "MO" -> Color.parseColor("#00897B") // 中国澳门：荷花绿
-            "TW" -> Color.parseColor("#8E24AA") // 中国台湾：深紫
-            "SG" -> Color.parseColor("#FB8C00") // 新加坡：活力橙
-            "DE" -> Color.parseColor("#00ACC1") // 德国：深青灰
-            "JP" -> Color.parseColor("#C62828") // 日本：深红
+            "CN" -> Color.parseColor("#E11D48") // 中国：正红
+            "JP" -> Color.parseColor("#F472B6") // 日本：樱花粉
+            "SG" -> Color.parseColor("#22C55E") // 新加坡：花园绿
+            "HK" -> Color.parseColor("#F59E0B") // 香港：紫荆金
+            "KR" -> Color.parseColor("#FB923C") // 韩国：太极暖橙 (避开蓝色)
+            "US" -> Color.parseColor("#7C3AED") // 美国：星条商务紫 (避开蓝色)
+
+            "MO" -> Color.parseColor("#00897B") // 澳门：荷花绿
+            "TW" -> Color.parseColor("#0891B2") // 台湾：青天蓝
+            "DE" -> Color.parseColor("#64748B") // 德国：钢灰
+
             "NC", "ER", "OFF", "??", "--" -> Color.parseColor("#546E7A") // 异常/断网灰色
             else -> getDeterministicColor(code)
         }
@@ -165,156 +168,115 @@ object IconHelper {
     /* ==================== 测速独立功能区 ==================== */
 
     /**
-     * 模式 2：纯色块模式（2x2 四宫格图案，无中间文字，完全只用色块表达延迟与丢包）
+     * 模式 2：纯延迟九宫格模式（仅负责延迟）
      */
     fun createPingQualityGridIcon(rttMs: Long, lossRate: Float): Icon {
         val bitmap = Bitmap.createBitmap(CANVAS_SIZE, CANVAS_SIZE, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-        val (topLeftColor, bottomLeftColor, topRightColor, bottomRightColor) = calculateGridColors(rttMs, lossRate)
-
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val half = CANVAS_SIZE / 2f
-        val gap = 2f
-
-        // 左上 (延迟)
-        bgPaint.color = topLeftColor
-        canvas.drawRoundRect(RectF(1f, 1f, half - gap, half - gap), 8f, 8f, bgPaint)
-
-        // 左下 (延迟)
-        bgPaint.color = bottomLeftColor
-        canvas.drawRoundRect(RectF(1f, half + gap, half - gap, CANVAS_SIZE.toFloat() - 1f), 8f, 8f, bgPaint)
-
-        // 右上 (丢包率)
-        bgPaint.color = topRightColor
-        canvas.drawRoundRect(RectF(half + gap, 1f, CANVAS_SIZE.toFloat() - 1f, half - gap), 8f, 8f, bgPaint)
-
-        // 右下 (丢包率)
-        bgPaint.color = bottomRightColor
-        canvas.drawRoundRect(RectF(half + gap, half + gap, CANVAS_SIZE.toFloat() - 1f, CANVAS_SIZE.toFloat() - 1f), 8f, 8f, bgPaint)
+        val gridColors = calculateLatencyGridColors(rttMs)
+        draw3x3Grid(canvas, gridColors)
 
         return Icon.createWithBitmap(bitmap)
     }
 
     /**
-     * 模式 3：双字母测速模式（2x2 四宫格背景 + 居中极大大号评级字母 EX/GD/FR/PR/BD，字号提升至 84f）
+     * 模式 3：纯丢包率九宫格模式（仅负责丢包）
      */
     fun createPingQualityWithTextIcon(rttMs: Long, lossRate: Float): Icon {
         val bitmap = Bitmap.createBitmap(CANVAS_SIZE, CANVAS_SIZE, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-        val (topLeftColor, bottomLeftColor, topRightColor, bottomRightColor, levelText) = calculateGridColorsAndText(rttMs, lossRate)
-
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        val half = CANVAS_SIZE / 2f
-        val gap = 2f
-
-        // 绘制 2x2 四宫格底色
-        bgPaint.color = topLeftColor
-        canvas.drawRoundRect(RectF(1f, 1f, half - gap, half - gap), 8f, 8f, bgPaint)
-
-        bgPaint.color = bottomLeftColor
-        canvas.drawRoundRect(RectF(1f, half + gap, half - gap, CANVAS_SIZE.toFloat() - 1f), 8f, 8f, bgPaint)
-
-        bgPaint.color = topRightColor
-        canvas.drawRoundRect(RectF(half + gap, 1f, CANVAS_SIZE.toFloat() - 1f, half - gap), 8f, 8f, bgPaint)
-
-        bgPaint.color = bottomRightColor
-        canvas.drawRoundRect(RectF(half + gap, half + gap, CANVAS_SIZE.toFloat() - 1f, CANVAS_SIZE.toFloat() - 1f), 8f, 8f, bgPaint)
-
-        // 居中绘制与 IP 双字母完全同等级大字号（84f）的防混淆高亮文字
-        val textPaint = Paint().apply {
-            color = Color.WHITE
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-            isFakeBoldText = true
-            isAntiAlias = true
-            textAlign = Paint.Align.CENTER
-            textSize = 84f // 同步提升至 84f 极大号字，和前面的 IP 显示双字母一样大！
-            setShadowLayer(4f, 0f, 0f, Color.parseColor("#99000000"))
-        }
-
-        // 动态防切边保护（最大可用宽度 88px）
-        val maxAllowedWidth = CANVAS_SIZE - 8f
-        var textWidth = textPaint.measureText(levelText)
-        if (textWidth > maxAllowedWidth) {
-            textPaint.textSize = textPaint.textSize * (maxAllowedWidth / textWidth)
-        }
-
-        val fontMetrics = textPaint.fontMetrics
-        val baseline = (CANVAS_SIZE / 2f) - ((fontMetrics.ascent + fontMetrics.descent) / 2f)
-
-        canvas.drawText(levelText, CANVAS_SIZE / 2f, baseline, textPaint)
+        val gridColors = calculateLossGridColors(lossRate)
+        draw3x3Grid(canvas, gridColors)
 
         return Icon.createWithBitmap(bitmap)
     }
 
     /**
-     * 辅助方法：统一计算测速色彩矩阵
+     * 绘制通用 3x3 九宫格图形（96x96 画布，带微圆角）
      */
-    private fun calculateGridColors(rttMs: Long, lossRate: Float):
-            Quadruple<Int, Int, Int, Int> {
-        val GREEN = Color.parseColor("#388E3C")
-        val YELLOW = Color.parseColor("#F57C00")
-        val RED = Color.parseColor("#D32F2F")
+    private fun draw3x3Grid(canvas: Canvas, gridColors: Array<Int>) {
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val padding = 2f
+        val spacing = 2f
+        val cellSize = (CANVAS_SIZE - padding * 2 - spacing * 2) / 3f
 
-        val (topLeftColor, bottomLeftColor) = when {
-            rttMs in 0 until 80 -> Pair(GREEN, GREEN)
-            rttMs in 80 until 120 -> Pair(GREEN, YELLOW)
-            rttMs in 120 until 160 -> Pair(YELLOW, YELLOW)
-            rttMs in 160 until 220 -> Pair(YELLOW, RED)
-            else -> Pair(RED, RED)
+        for (row in 0 until 3) {
+            for (col in 0 until 3) {
+                val index = row * 3 + col
+                bgPaint.color = gridColors[index]
+
+                val left = padding + col * (cellSize + spacing)
+                val top = padding + row * (cellSize + spacing)
+                val right = left + cellSize
+                val bottom = top + cellSize
+
+                canvas.drawRoundRect(RectF(left, top, right, bottom), 4f, 4f, bgPaint)
+            }
         }
-
-        val (topRightColor, bottomRightColor) = when {
-            lossRate <= 0.0f -> Pair(GREEN, GREEN)
-            lossRate <= 0.03f -> Pair(GREEN, YELLOW)
-            lossRate <= 0.08f -> Pair(YELLOW, YELLOW)
-            lossRate <= 0.15f -> Pair(YELLOW, RED)
-            else -> Pair(RED, RED)
-        }
-
-        return Quadruple(topLeftColor, bottomLeftColor, topRightColor, bottomRightColor)
     }
 
     /**
-     * 辅助方法：统一计算测速色彩矩阵及对应的评级双字母
+     * 辅助方法 1：纯延迟 3x3 九宫格颜色计算
      */
-    private fun calculateGridColorsAndText(rttMs: Long, lossRate: Float):
-            Quintuple<Int, Int, Int, Int, String> {
-        val GREEN = Color.parseColor("#388E3C")
-        val YELLOW = Color.parseColor("#F57C00")
-        val RED = Color.parseColor("#D32F2F")
+    private fun calculateLatencyGridColors(rttMs: Long): Array<Int> {
+        val colorGreen = Color.parseColor("#388E3C")  // 绿色
+        val colorYellow = Color.parseColor("#F57C00") // 黄色
+        val colorRed = Color.parseColor("#D32F2F")    // 红色
 
-        val (topLeftColor, bottomLeftColor, delayLevel) = when {
-            rttMs in 0 until 80 -> Triple(GREEN, GREEN, 5)
-            rttMs in 80 until 120 -> Triple(GREEN, YELLOW, 4)
-            rttMs in 120 until 160 -> Triple(YELLOW, YELLOW, 3)
-            rttMs in 160 until 220 -> Triple(YELLOW, RED, 2)
-            else -> Triple(RED, RED, 1)
+        val gridColors = Array(9) { colorGreen }
+
+        when {
+            rttMs < 0 || rttMs > 200 -> {
+                for (i in 0 until 9) gridColors[i] = colorRed
+            }
+            rttMs <= 100 -> {
+                for (i in 0 until 9) gridColors[i] = colorGreen
+            }
+            else -> {
+                val yellowCount = ((rttMs - 100) * 9 / 100).toInt().coerceIn(1, 9)
+                for (i in 0 until 9) {
+                    gridColors[i] = if (i < yellowCount) colorYellow else colorGreen
+                }
+            }
         }
-
-        val (topRightColor, bottomRightColor, lossLevel) = when {
-            lossRate <= 0.0f -> Triple(GREEN, GREEN, 5)
-            lossRate <= 0.03f -> Triple(GREEN, YELLOW, 4)
-            lossRate <= 0.08f -> Triple(YELLOW, YELLOW, 3)
-            lossRate <= 0.15f -> Triple(YELLOW, RED, 2)
-            else -> Triple(RED, RED, 1)
-        }
-
-        val levelText = when (minOf(delayLevel, lossLevel)) {
-            5 -> "EX"
-            4 -> "GD"
-            3 -> "FR"
-            2 -> "PR"
-            else -> "BD"
-        }
-
-        return Quintuple(topLeftColor, bottomLeftColor, topRightColor, bottomRightColor, levelText)
+        return gridColors
     }
 
-    // 内部数据类支持辅助返回多参数
-    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-    private data class Quintuple<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)
+    /**
+     * 辅助方法 2：纯丢包率 3x3 九宫格颜色计算
+     */
+    private fun calculateLossGridColors(lossRate: Float): Array<Int> {
+        val colorGreen = Color.parseColor("#388E3C")  // 绿色
+        val colorYellow = Color.parseColor("#F57C00") // 黄色
+        val colorRed = Color.parseColor("#D32F2F")    // 红色
+
+        val gridColors = Array(9) { colorGreen }
+        val lossPercent = (lossRate * 100).toInt().coerceIn(0, 100)
+
+        when {
+            lossPercent >= 100 -> {
+                for (i in 0 until 9) gridColors[i] = colorRed
+            }
+            lossPercent == 0 -> {
+                for (i in 0 until 9) gridColors[i] = colorGreen
+            }
+            lossPercent in 1..50 -> {
+                val yellowCount = ((lossPercent / 50.0f) * 9).toInt().coerceIn(1, 9)
+                for (i in 0 until 9) {
+                    gridColors[i] = if (i < yellowCount) colorYellow else colorGreen
+                }
+            }
+            else -> {
+                val redCount = (((lossPercent - 50) / 50.0f) * 9).toInt().coerceIn(1, 8)
+                for (i in 0 until 9) {
+                    gridColors[i] = if (i < redCount) colorRed else colorYellow
+                }
+            }
+        }
+        return gridColors
+    }
 }
